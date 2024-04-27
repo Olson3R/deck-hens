@@ -18,7 +18,7 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-#define VERSION "0.4.2"
+#define VERSION "0.4.3"
 
 // TODO: Get CA cert for Github working
 const char ca_cert[] PROGMEM = R"EOF(
@@ -156,11 +156,11 @@ void toggleLed(Led *led) {
 }
 
 float getTempF() {
-  // sensors_event_t humidity, temp;
-  // aht.getEvent(&humidity, &temp);
-  // return temp.temperature * 9.0 / 5.0 + 32.0;
-  // return (float) temp.temperature;
-  return 2.34;
+  sensors_event_t humidity, temp;
+  aht.getEvent(&humidity, &temp);
+  return temp.temperature * 9.0 / 5.0 + 32.0;
+  return (float) temp.temperature;
+  // return 2.34;
   // sensors.requestTemperatures();
   // return sensors.getTempFByIndex(0);
 }
@@ -231,9 +231,7 @@ void handleStatus(AsyncWebServerRequest *request) {
   root["color"] = hexColor;
   root["tempF"] = tempF;
   char buf[50];
-  root["nextEventName"] = tickerName;
-  // byte ss = aht.getStatus();
-  // sprintf(buf, "%b", ss);
+  // root["nextEventName"] = tickerName;
   root["nextEventName"] = ahtStatus;
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &tickerTime);
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &tickerTime);
