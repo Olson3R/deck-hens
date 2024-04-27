@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
-// #include <SPIFFS.h>
 #include <Ticker.h>
 #include <Adafruit_NeoPixel.h>
 #include <ESP8266WiFi.h>
@@ -15,10 +14,38 @@
 #include <Wire.h>
 #include <Adafruit_AHTX0.h>
 #include <sunset.h>
-#include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
+#include <ESP8266HTTPClient.h>
 
-#define VERSION "0.2.0"
+#define VERSION "0.3.2"
+
+const char *rootCACertificate = "-----BEGIN CERTIFICATE-----\n"
+"MIIEozCCBEmgAwIBAgIQTij3hrZsGjuULNLEDrdCpTAKBggqhkjOPQQDAjCBjzEL\n"
+"MAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4GA1UE\n"
+"BxMHU2FsZm9yZDEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTcwNQYDVQQDEy5T\n"
+"ZWN0aWdvIEVDQyBEb21haW4gVmFsaWRhdGlvbiBTZWN1cmUgU2VydmVyIENBMB4X\n"
+"DTI0MDMwNzAwMDAwMFoXDTI1MDMwNzIzNTk1OVowFTETMBEGA1UEAxMKZ2l0aHVi\n"
+"LmNvbTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABARO/Ho9XdkY1qh9mAgjOUkW\n"
+"mXTb05jgRulKciMVBuKB3ZHexvCdyoiCRHEMBfFXoZhWkQVMogNLo/lW215X3pGj\n"
+"ggL+MIIC+jAfBgNVHSMEGDAWgBT2hQo7EYbhBH0Oqgss0u7MZHt7rjAdBgNVHQ4E\n"
+"FgQUO2g/NDr1RzTK76ZOPZq9Xm56zJ8wDgYDVR0PAQH/BAQDAgeAMAwGA1UdEwEB\n"
+"/wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMEkGA1UdIARCMEAw\n"
+"NAYLKwYBBAGyMQECAgcwJTAjBggrBgEFBQcCARYXaHR0cHM6Ly9zZWN0aWdvLmNv\n"
+"bS9DUFMwCAYGZ4EMAQIBMIGEBggrBgEFBQcBAQR4MHYwTwYIKwYBBQUHMAKGQ2h0\n"
+"dHA6Ly9jcnQuc2VjdGlnby5jb20vU2VjdGlnb0VDQ0RvbWFpblZhbGlkYXRpb25T\n"
+"ZWN1cmVTZXJ2ZXJDQS5jcnQwIwYIKwYBBQUHMAGGF2h0dHA6Ly9vY3NwLnNlY3Rp\n"
+"Z28uY29tMIIBgAYKKwYBBAHWeQIEAgSCAXAEggFsAWoAdwDPEVbu1S58r/OHW9lp\n"
+"LpvpGnFnSrAX7KwB0lt3zsw7CAAAAY4WOvAZAAAEAwBIMEYCIQD7oNz/2oO8VGaW\n"
+"WrqrsBQBzQH0hRhMLm11oeMpg1fNawIhAKWc0q7Z+mxDVYV/6ov7f/i0H/aAcHSC\n"
+"Ii/QJcECraOpAHYAouMK5EXvva2bfjjtR2d3U9eCW4SU1yteGyzEuVCkR+cAAAGO\n"
+"Fjrv+AAABAMARzBFAiEAyupEIVAMk0c8BVVpF0QbisfoEwy5xJQKQOe8EvMU4W8C\n"
+"IGAIIuzjxBFlHpkqcsa7UZy24y/B6xZnktUw/Ne5q5hCAHcATnWjJ1yaEMM4W2zU\n"
+"3z9S6x3w4I4bjWnAsfpksWKaOd8AAAGOFjrv9wAABAMASDBGAiEA+8OvQzpgRf31\n"
+"uLBsCE8ktCUfvsiRT7zWSqeXliA09TUCIQDcB7Xn97aEDMBKXIbdm5KZ9GjvRyoF\n"
+"9skD5/4GneoMWzAlBgNVHREEHjAcggpnaXRodWIuY29tgg53d3cuZ2l0aHViLmNv\n"
+"bTAKBggqhkjOPQQDAgNIADBFAiEAru2McPr0eNwcWNuDEY0a/rGzXRfRrm+6XfZe\n"
+"SzhYZewCIBq4TUEBCgapv7xvAtRKdVdi/b4m36Uyej1ggyJsiesA\n"
+"-----END CERTIFICATE-----\n";
 
 #define TIMEZONE_OFFSET_HOURS -5
 #define LATITUDE              46.876914
@@ -74,6 +101,8 @@ const unsigned long wifiTimeoutMs = 30 * 1000;
 unsigned long lastWifiReconnectMs = 0;
 unsigned long lastButtonPress = 0;
 const int BUTTON_DELAY = 100;
+
+bool upgradeSystem = false;
 
 struct Led {
   uint32_t color;
@@ -236,26 +265,12 @@ void handleBodyRestart(AsyncWebServerRequest *request, uint8_t *data) {
   ESP.restart();
 }
 
-void handleBodyUpdate(AsyncWebServerRequest *request, uint8_t *data) {
-  HTTPClient client;
-  ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
-  Serial.println("Update FS...");
-  t_httpUpdate_return ret = ESPhttpUpdate.updateFS(client, "http://github.com/Olson3R/deck-hens/raw/main/release/latest/spiffs.bin");
-  if (ret == HTTP_UPDATE_OK) {
-    Serial.println("Update sketch...");
-    // ret = ESPhttpUpdate.update(client, "http://github.com/Olson3R/deck-hens/raw/main/release/latest/firmware.bin");
-    // if (ret == HTTP_UPDATE_OK) {
-      StaticJsonDocument<200> doc;
-      JsonObject root = doc.to<JsonObject>();
-      root["status"] = "SUCCESS";
-      request->send(200, "application/json", doc.as<String>());
-      delay(2000);
-      ESP.restart();
-    // }
-  }
-
-  String err = buildErrorJson("Failed to update firmware!");
-  request->send(500, "application/json", err);
+void handleBodyUpgradeSystem(AsyncWebServerRequest *request, uint8_t *data) {
+  upgradeSystem = true;
+  StaticJsonDocument<200> doc;
+  JsonObject root = doc.to<JsonObject>();
+  root["status"] = "SUCCESS";
+  request->send(200, "application/json", doc.as<String>());
 }
 
 void handleBodyWifi(AsyncWebServerRequest *request, uint8_t *data) {
@@ -564,8 +579,8 @@ void setup() {
       if (request->url() == "/restart") {
         return handleBodyRestart(request, data);
       }
-      if (request->url() == "/update") {
-        return handleBodyUpdate(request, data);
+      if (request->url() == "/upgrade-system") {
+        return handleBodyUpgradeSystem(request, data);
       }
       if (request->url() == "/wifi") {
         return handleBodyWifi(request, data);
@@ -591,14 +606,44 @@ void setup() {
 
 void loop() {
   checkWifi();
-  float temperatureF = getTempF();
-
   if (!wifiConnected()) {
     Serial.println("No Wifi");
   }
 
+  MDNS.update();
+
+  if (upgradeSystem) {
+    upgradeSystem = false;
+    ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
+    Serial.println("Update FS...");
+    // NetworkClientSecure client;
+    // client.setCACert(rootCACertificate);
+    BearSSL::WiFiClientSecure client;
+    client.setInsecure();
+
+    // Reading data over SSL may be slow, use an adequate timeout
+    client.setTimeout(12000);  // timeout argument is defined in milliseconds for setTimeout
+
+    ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    t_httpUpdate_return ret = ESPhttpUpdate.updateFS(client, "https://raw.githubusercontent.com/Olson3R/deck-hens/main/release/latest/spiffs.bin");
+    if (ret == HTTP_UPDATE_OK) {
+      Serial.println("Update sketch...");
+      // ret = ESPhttpUpdate.update(client, "https://raw.githubusercontent.com/Olson3R/deck-hens/main/release/latest/firmware.bin");
+      // if (ret == HTTP_UPDATE_OK) {
+        StaticJsonDocument<200> doc;
+        JsonObject root = doc.to<JsonObject>();
+        delay(2000);
+        ESP.restart();
+      // }
+    } else {
+      strcpy(ahtStatus, ESPhttpUpdate.getLastErrorString().c_str());
+    }
+  }
+
+  float temperatureF = getTempF();
+
   Serial.print("T: ");
   Serial.println(temperatureF);
 
-  delay(30000); // 30 seconds
+  delay(5000); // 5 seconds
 }
