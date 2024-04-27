@@ -18,9 +18,9 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-#define VERSION "0.4.1"
+#define VERSION "0.4.2"
 
-// CA cert for Github?
+// TODO: Get CA cert for Github working
 const char ca_cert[] PROGMEM = R"EOF(
 MIIEozCCBEmgAwIBAgIQTij3hrZsGjuULNLEDrdCpTAKBggqhkjOPQQDAjCBjzEL
 MAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4GA1UE
@@ -49,7 +49,7 @@ bTAKBggqhkjOPQQDAgNIADBFAiEAru2McPr0eNwcWNuDEY0a/rGzXRfRrm+6XfZe
 SzhYZewCIBq4TUEBCgapv7xvAtRKdVdi/b4m36Uyej1ggyJsiesA
 -----END CERTIFICATE-----
 )EOF";
-X509List cert(ca_cert);
+// X509List cert(ca_cert);
 
 #define TIMEZONE_OFFSET_HOURS -5
 #define LATITUDE              46.876914
@@ -620,15 +620,9 @@ void loop() {
     upgradeSystem = false;
     ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
     Serial.println("Update FS...");
-    // NetworkClientSecure client;
-    // client.setCACert(rootCACertificate);
-    // BearSSL::WiFiClientSecure client;
-    // client.setInsecure();
-    // Require a certificate validated by the trusted CA
-    // BearSSL::X509List *serverTrustedCA = new BearSSL::X509List(ca_cert);
-    // client.setClientTrustAnchor(serverTrustedCA);
     WiFiClientSecure client;
-    client.setTrustAnchors(&cert);
+    client.setInsecure();
+    // client.setTrustAnchors(&cert);
 
     // Reading data over SSL may be slow, use an adequate timeout
     client.setTimeout(12000);  // timeout argument is defined in milliseconds for setTimeout
