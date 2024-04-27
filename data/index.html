@@ -36,6 +36,7 @@
         const [nextEventName, setNextEventName] = useState(null)
         const [wifiSsid, setWifiSsid] = useState(null)
         const [wifiPassword, setWifiPassword] = useState(null)
+        const [version, setVersion] = useState(null)
         const [state, setState] = useState('main')
 
         useEffect(
@@ -47,6 +48,8 @@
               setTempF(data.tempF)
               setNextEventName(data.nextEventName)
               setNextEventTime(new Date(data.nextEventTime).toLocaleString('en-US', { hourCycle: 'h23' }))
+              setVersion(data.version)
+
               // setPattern(data.pattern)
               setTimeout(() => ledMounted.current = true, 100)
             }
@@ -138,6 +141,7 @@
 </main>
 <footer>
   <div class="float-right">
+    ${version ?? '?'}
     <button class="button button-clear" style="color: gray" onClick=${showSettings}><i class="fa-solid fa-gear"></i></button>
   </div>
 </footer>

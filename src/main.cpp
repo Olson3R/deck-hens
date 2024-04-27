@@ -18,6 +18,8 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
+#define VERSION "0.2.0"
+
 #define TIMEZONE_OFFSET_HOURS -5
 #define LATITUDE              46.876914
 #define LONGITUDE             -90.895601
@@ -140,15 +142,13 @@ double getSunsetMins(tm *timeinfo) {
   return sun.calcCivilSunset();
 }
 
-void update() {
-  HTTPClient client;
-  ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
-  Serial.println("Update FS...");
-  t_httpUpdate_return ret = ESPhttpUpdate.updateFS(client, "http://server/spiffs.bin");
-  if (ret == HTTP_UPDATE_OK) {
-    Serial.println("Update sketch...");
-    ret = ESPhttpUpdate.update(client, "http://server/file.bin");
-  }
+String buildErrorJson(const char* message) {
+  StaticJsonDocument<200> doc;
+  JsonObject root = doc.to<JsonObject>();
+  root["status"] = "ERROR";
+  root["message"] = message;
+
+  return doc.as<String>();
 }
 
 void handleFile(AsyncWebServerRequest *request, String path, String mimeType) {
@@ -186,15 +186,6 @@ void handleHtm(AsyncWebServerRequest *request) {
   handleFile(request, "/htm.js", "application/javascript");
 }
 
-String buildErrorJson(const char* message) {
-  StaticJsonDocument<200> doc;
-  JsonObject root = doc.to<JsonObject>();
-  root["status"] = "ERROR";
-  root["message"] = message;
-
-  return doc.as<String>();
-}
-
 void handleStatus(AsyncWebServerRequest *request) {
   float tempF = getTempF();
   // float tempF = 1.22;
@@ -221,6 +212,7 @@ void handleStatus(AsyncWebServerRequest *request) {
   getTime(&current);
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &current);
   root["currentTime"] = buf;
+  root["version"] = VERSION;
   request->send(200, "application/json", doc.as<String>());
 }
 
@@ -242,6 +234,28 @@ void handleBodyRestart(AsyncWebServerRequest *request, uint8_t *data) {
   request->send(200, "application/json", "{\"status\":\"SUCCESS\"}");
   delay(200);
   ESP.restart();
+}
+
+void handleBodyUpdate(AsyncWebServerRequest *request, uint8_t *data) {
+  HTTPClient client;
+  ESPhttpUpdate.setLedPin(LED_BUILTIN, LOW);
+  Serial.println("Update FS...");
+  t_httpUpdate_return ret = ESPhttpUpdate.updateFS(client, "http://github.com/Olson3R/deck-hens/raw/main/release/latest/spiffs.bin");
+  if (ret == HTTP_UPDATE_OK) {
+    Serial.println("Update sketch...");
+    // ret = ESPhttpUpdate.update(client, "http://github.com/Olson3R/deck-hens/raw/main/release/latest/firmware.bin");
+    // if (ret == HTTP_UPDATE_OK) {
+      StaticJsonDocument<200> doc;
+      JsonObject root = doc.to<JsonObject>();
+      root["status"] = "SUCCESS";
+      request->send(200, "application/json", doc.as<String>());
+      delay(2000);
+      ESP.restart();
+    // }
+  }
+
+  String err = buildErrorJson("Failed to update firmware!");
+  request->send(500, "application/json", err);
 }
 
 void handleBodyWifi(AsyncWebServerRequest *request, uint8_t *data) {
@@ -544,17 +558,14 @@ void setup() {
   httpServer.on("/status", HTTP_GET, handleStatus);
   httpServer.onRequestBody(
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-      Serial.print(len);
-      Serial.print(", ");
-      Serial.print(index);
-      Serial.print(", ");
-      Serial.println(total);
-
       if (request->url() == "/led") {
         return handleBodyLed(request, data);
       }
       if (request->url() == "/restart") {
         return handleBodyRestart(request, data);
+      }
+      if (request->url() == "/update") {
+        return handleBodyUpdate(request, data);
       }
       if (request->url() == "/wifi") {
         return handleBodyWifi(request, data);
