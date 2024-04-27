@@ -24,7 +24,7 @@
       import { useEffect, useRef, useState } from '/preact-hooks.js'
       import htm from '/htm.js'
       const html = htm.bind(h)
-      const UI_VERSION = '0.4.0'
+      const UI_VERSION = '0.4.1'
 
       function App() {
         const timerRef = useRef(null)
@@ -114,7 +114,7 @@
           const options = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: null,
+            body: "",
           }
           const response = await fetch('/upgrade-system', options)
           const data = await response.json()

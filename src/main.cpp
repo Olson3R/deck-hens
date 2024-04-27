@@ -18,7 +18,7 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-#define VERSION "0.4.0"
+#define VERSION "0.4.1"
 
 // CA cert for Github?
 const char ca_cert[] PROGMEM = R"EOF(
