@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8"/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300italic,700,700italic">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/milligram/1.4.1/milligram.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/fontawesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/solid.min.css">
+    <style>
+      body { margin: 5px 15px 5px 15px; }
+      header h1 { border-bottom: 1px solid black; }
+      section { border: 1px solid #eeeeee; border-radius: 0.4em; padding: 5px; margin-bottom: 15px; }
+      section:last-of-type { margin-bottom: 0px; }
+      input[type="color"] { width: 128px; }
+      .hidden { display: none; }
+      .snackbar { position: fixed; right: 10px; top: 10px; padding: 5px; background-color: yellow; border-radius: 0.4em; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <script type="module" crossorigin>
+      import { h, Component, render } from '/preact.js'
+      import { useEffect, useRef, useState } from '/preact-hooks.js'
+      import htm from '/htm.js'
+      const html = htm.bind(h)
+
+      function App() {
+        const timerRef = useRef(null)
+        const ledMounted = useRef(false)
+        const [snackbarMessage, setSnackbarMessage] = useState(null)
+        const [color, setColor] = useState('#000000')
+        const [pattern, setPattern] = useState('solid')
+        const [status, setStatus] = useState(null)
+        const [tempF, setTempF] = useState(null)
+        const [nextEventTime, setNextEventTime] = useState(null)
+        const [nextEventName, setNextEventName] = useState(null)
+        const [wifiSsid, setWifiSsid] = useState(null)
+        const [wifiPassword, setWifiPassword] = useState(null)
+        const [state, setState] = useState('main')
+
+        useEffect(
+          () => {
+            const getStatus = async () => {
+              const response = await fetch('/status')
+              const data = await response.json()
+              setColor(data.color)
+              setTempF(data.tempF)
+              setNextEventName(data.nextEventName)
+              setNextEventTime(new Date(data.nextEventTime).toLocaleString('en-US', { hourCycle: 'h23' }))
+              // setPattern(data.pattern)
+              setTimeout(() => ledMounted.current = true, 100)
+            }
+            getStatus()
+            return () => clearTimeout(timerRef.current)
+          },
+          []
+        )
+
+        useEffect(
+          () => {
+            if (!ledMounted.current) {
+              return
+            }
+
+            const setLed = async () => {
+              console.log('LED', color, pattern)
+              const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color, pattern })
+              }
+              const response = await fetch('/led', options)
+              const data = await response.json()
+              updateMessage(data.status)
+            }
+            setLed()
+          },
+          [color, pattern]
+        )
+
+        const updateMessage = (message) => {
+          setSnackbarMessage(message)
+          clearTimeout(timerRef.current)
+          timerRef.current = setTimeout(() => setSnackbarMessage(null), 5000)
+        }
+
+        const turnOff = () => {
+          setColor('#000000')
+        }
+
+        const saveWifi = async () => {
+          if (!wifiSsid || !wifiPassword) {
+            updateMessage("SSID and Password reqired")
+            return
+          }
+
+          const options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wifi: wifiSsid, password: wifiPassword })
+          }
+          const response = await fetch('/wifi', options)
+          const data = await response.json()
+          updateMessage(data.status)
+          showMain();
+        }
+
+        const showMain = () => {
+          setState('main')
+        }
+
+        const showSettings = () => {
+          setState('settings')
+        }
+
+        return html`
+<header>
+  <h1>Deck Hens</h1>
+</header>
+<main>
+  <section class="${state === 'main' ? '' : 'hidden'}">
+    <h3>Temp: ${tempF?.toFixed(2) ?? '⌛'}F</h3>
+    <h3>Next Event: ${nextEventName ?? '⌛'} @ ${nextEventTime ?? '⌛'}</h3>
+    <button id="turnOff" class="button button-outline" onClick=${turnOff}>Turn Off LEDs</button>
+    <label for="ledColor">LED Color</label>
+    <input type="color" id="ledColor" name="ledColor" value="${color}" onChange=${(e) => setColor(e.currentTarget.value)} />
+  </section>
+
+  <section class="${state === 'settings' ? '' : 'hidden'}">
+    <h2>WIFI</h2>
+    <label for="wifiSsid">SSID</label>
+    <input id="wifiSsid" name="wifiSsid" value=${wifiSsid} onInput=${(e) => setWifiSsid(e.currentTarget.value)} />
+    <label for="wifiSsid">Password</label>
+    <input type="password" id="wifiPassword" name="wifiPassword" value=${wifiPassword} onInput=${(e) => setWifiPassword(e.currentTarget.value)} />
+    <button class="button button-outline" onClick=${showMain}>Cancel</button>
+    <button class="button" style="margin-left: 10px;" onClick=${saveWifi}>Save</button>
+  </section>
+</main>
+<footer>
+  <div class="float-right">
+    <button class="button button-clear" style="color: gray" onClick=${showSettings}><i class="fa-solid fa-gear"></i></button>
+  </div>
+</footer>
+
+<div class="snackbar ${snackbarMessage?.length > 0 ? '' : 'hidden'}">
+  ${snackbarMessage}
+</div>
+`
+      }
+
+      render(html`<${App}/>`, document.body)
+    </script>
+  </body>
+</html>
