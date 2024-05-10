@@ -11,14 +11,14 @@
 #include <ESP8266mDNS.h>
 #include <FS.h>
 #include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_AHTX0.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include <sunset.h>
 #include <ESP8266httpUpdate.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-#define VERSION "0.4.3"
+#define VERSION "0.5.1"
 
 // TODO: Get CA cert for Github working
 const char ca_cert[] PROGMEM = R"EOF(
@@ -59,14 +59,16 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffsetSec = TIMEZONE_OFFSET_HOURS * 60 * 60;
 const int   daylightOffsetSec = 0;
 
-#define BUTTON    15
-#define LEDSTRIP  2
+#define BUTTON_GPIO    15
+#define TEMP_GPIO      D7
+#define LEDSTRIP_GPIO  2
 #define NUMPIXELS 150 // pixels on RGB LED strip
 
 #define EEPROM_SIZE 512
 #define COLORSCALE 8 // 5 bit: 0-31 scaled to x8
 
-Adafruit_AHTX0 aht;
+OneWire oneWire(TEMP_GPIO);
+DallasTemperature sensors(&oneWire);
 
 IPAddress localIp(192, 168, 4, 1);
 IPAddress gateway(0, 0, 0, 0);
@@ -101,6 +103,8 @@ char tickerName[50];
 char ahtStatus[50];
 SunSet sun;
 
+float tempF = -999.0;
+
 const unsigned long wifiTimeoutMs = 30 * 1000;
 unsigned long lastWifiReconnectMs = 0;
 unsigned long lastButtonPress = 0;
@@ -114,7 +118,7 @@ struct Led {
   char name[6];
 };
 
-Led led = { 0, Adafruit_NeoPixel(NUMPIXELS, LEDSTRIP, NEO_BRG + NEO_KHZ800), "HEN" };
+Led led = { 0, Adafruit_NeoPixel(NUMPIXELS, LEDSTRIP_GPIO, NEO_BRG + NEO_KHZ800), "HEN" };
 
 struct {
   char wifiSsid[32] = "";
@@ -156,13 +160,9 @@ void toggleLed(Led *led) {
 }
 
 float getTempF() {
-  sensors_event_t humidity, temp;
-  aht.getEvent(&humidity, &temp);
-  return temp.temperature * 9.0 / 5.0 + 32.0;
-  return (float) temp.temperature;
-  // return 2.34;
-  // sensors.requestTemperatures();
-  // return sensors.getTempFByIndex(0);
+  sensors.requestTemperatures();
+  return sensors.getTempFByIndex(0);
+  // return -1.23;
 }
 
 double getSunriseMins(tm *timeinfo) {
@@ -220,10 +220,6 @@ void handleHtm(AsyncWebServerRequest *request) {
 }
 
 void handleStatus(AsyncWebServerRequest *request) {
-  float tempF = getTempF();
-  // float tempF = 1.22;
-  // double sunsetOffsetMins = getSunsetOffsetMins();
-
   char hexColor[8];
   StaticJsonDocument<300> doc;
   JsonObject root = doc.to<JsonObject>();
@@ -231,13 +227,9 @@ void handleStatus(AsyncWebServerRequest *request) {
   root["color"] = hexColor;
   root["tempF"] = tempF;
   char buf[50];
-  // root["nextEventName"] = tickerName;
-  root["nextEventName"] = ahtStatus;
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &tickerTime);
+  root["nextEventName"] = tickerName;
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &tickerTime);
   root["nextEventTime"] = buf;
-  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S-0500", &tickerSetTime);
-  root["nextEventSetTime"] = buf;
   root["nextEventDelaySeconds"] = tickerDelaySeconds;
   tm current;
   getTime(&current);
@@ -508,6 +500,7 @@ void ICACHE_RAM_ATTR ISR() {
 void setup() {
   Serial.begin(115200);
 
+  pinMode(TEMP_GPIO, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
@@ -517,13 +510,7 @@ void setup() {
   led.strip.show();
 
   Serial.println("Starting Temp Sensor...");
-  if (aht.begin()) {
-    Serial.println("Found AHT20");
-    strcpy(ahtStatus, "FOUND");
-  } else {
-    Serial.println("Didn't find AHT20");
-    strcpy(ahtStatus, "MISSING");
-  }
+  sensors.begin();
 
   Serial.println("Starting EEPROM...");
   EEPROM.begin(EEPROM_SIZE);
@@ -601,17 +588,13 @@ void setup() {
   setupSchedule();
 
   Serial.println("Setup button...");
-  attachInterrupt(BUTTON, ISR, RISING);
+  attachInterrupt(BUTTON_GPIO, ISR, RISING);
 
   Serial.println("Booted!");
 }
 
 void loop() {
   checkWifi();
-  if (!wifiConnected()) {
-    Serial.println("No Wifi");
-  }
-
   MDNS.update();
 
   if (upgradeSystem) {
@@ -639,10 +622,10 @@ void loop() {
     }
   }
 
-  float temperatureF = getTempF();
+  tempF = getTempF();
 
-  Serial.print("T: ");
-  Serial.println(temperatureF);
+  Serial.println("T: ");
+  Serial.println(tempF);
 
   delay(5000); // 5 seconds
 }
